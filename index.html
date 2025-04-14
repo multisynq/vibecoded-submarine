@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <head>
+        <title>Multisub</title>
+        <style>
+body {
+  margin: 0;
+  overflow: hidden;
+  background-color: #006994; /* Deep water blue */
+  font-family: sans-serif;
+}
+#scoreboard, #keybindings {
+    position: fixed;
+    background-color: rgba(0, 0, 0, 0.6);
+    color: white;
+    padding: 10px;
+    border-radius: 5px;
+    font-size: 14px; /* Scoreboard font size */
+    z-index: 20;
+    min-width: 150px;
+}
+#scoreboard {
+    top: 10px;
+    left: 10px;
+}
+#scoreboard h3 {
+    margin: 0 0 5px 0;
+    text-align: center;
+    font-size: 16px; /* Scoreboard heading size */
+}
+#scoreboard ul { list-style: none; padding: 0; margin: 0; }
+#scoreboard li { margin-bottom: 3px; display: flex; align-items: center; }
+.score-color-box { width: 12px; height: 12px; display: inline-block; margin-right: 8px; border: 1px solid #fff; }
+
+/* --- SHRINK KEYBINDINGS HELP --- */
+#keybindings {
+    position: fixed;
+    background-color: rgba(0, 0, 0, 0.5); /* Slightly more transparent */
+    color: #ccc; /* Lighter gray text */
+    padding: 5px 8px; /* Reduced padding */
+    border-radius: 4px;
+    font-size: 10px; /* Smaller base font */
+    z-index: 19; /* Below scoreboard if overlapping */
+    width: 140px; /* Fixed smaller width */
+    top: 10px; /* Start at same top */
+    left: 175px; /* Initial left, JS will adjust */
+}
+
+#keybindings h3 {
+    margin: 0 0 4px 0;
+    text-align: center;
+    font-size: 11px; /* Smaller heading */
+    font-weight: normal;
+    color: #eee;
+    border-bottom: 1px solid #555;
+    padding-bottom: 3px;
+}
+#keybindings ul { list-style: none; padding: 0; margin: 0; }
+
+#keybindings li {
+    margin-bottom: 1px; /* Tighter spacing */
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+#keybindings kbd {
+    background-color: #333; /* Darker keys */
+    padding: 1px 3px; /* Reduced padding */
+    border-radius: 2px;
+    font-weight: bold;
+    margin-right: 4px;
+    display: inline-block;
+    min-width: auto; /* Allow keys to shrink */
+    text-align: center;
+    font-size: 9px; /* Smaller key font */
+    border: 1px solid #555;
+}
+/* --- END SHRINK KEYBINDINGS HELP --- */
+
+
+/* Mobile Controls Styling */
+.controls {
+  position: fixed;
+  bottom: 15px;
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 0 15px;
+  box-sizing: border-box;
+  z-index: 10;
+  pointer-events: none;
+}
+.controls button {
+  pointer-events: auto;
+  background-color: rgba(0, 0, 0, 0.5);
+  color: white;
+  border: none;
+  padding: 12px 15px;
+  font-size: 16px;
+  border-radius: 5px;
+  touch-action: manipulation;
+  user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;
+  min-width: 60px;
+  text-align: center;
+  cursor: pointer;
+}
+#btn-fwd, #btn-bwd { padding: 15px 15px; }
+#btn-fire { padding: 15px 15px; background-color: rgba(200, 0, 0, 0.6); }
+.controls .left-controls, .controls .right-controls, .controls .center-controls { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.controls .center-controls { position: absolute; left: 50%; transform: translateX(-50%); bottom: 0; }
+.controls .left-controls { position: absolute; left: 15px; bottom: 0; }
+.controls .right-controls { position: absolute; right: 15px; bottom: 0; }
+
+/* move Croquet QR code */
+#croquet_dock { top: 10px; right: 10px; left: auto; bottom: auto; }
+        </style>
+        <!-- Import maps -->
+        <script type="importmap">
+            {
+                "imports": {
+                    "three": "https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js",
+                    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/",
+                    "@croquet/croquet": "https://cdn.jsdelivr.net/npm/@croquet/croquet@2.0.0/pub/croquet.esm.js"
+                }
+            }
+        </script>
+    </head>
+    <body>
+        <div id="scoreboard"><h3>Fish Colors</h3><ul id="score-list"></ul></div>
+        <div id="keybindings"><h3>Controls</h3><ul><li><kbd>W</kbd>/<kbd>↑</kbd> Forward</li><li><kbd>S</kbd>/<kbd>↓</kbd> Backward</li><li><kbd>A</kbd>/<kbd>←</kbd> Turn Left</li><li><kbd>D</kbd>/<kbd>→</kbd> Turn Right</li><li><kbd>E</kbd>/<kbd>R</kbd>/<kbd>PgUp</kbd> Ascend</li><li><kbd>Q</kbd>/<kbd>F</kbd>/<kbd>PgDn</kbd> Descend</li><li><kbd>Space</kbd> Fire</li></ul></div>
+        <div class="controls"><div class="left-controls"><button id="btn-up">Up</button><button id="btn-down">Down</button></div><div class="center-controls"><button id="btn-fwd">Fwd</button><button id="btn-bwd">Bwd</button></div><div class="right-controls"><button id="btn-fire">Fire</button><button id="btn-left">Left</button><button id="btn-right">Right</button></div></div>
+
+        <script type="module">
+import * as THREE from "three";
+import * as Croquet from "@croquet/croquet";
+
+const C = Croquet.Constants;
+C.subSpeed = 0.08; C.subTurnSpeed = 0.03; C.subVerticalSpeed = 0.05;
+C.paintballSpeed = 0.35; C.paintballLifetime = 3000; C.shootCooldown = 400;
+C.fishCount = 50; C.fishSpeed = 0.02; C.fishTurnSpeed = 0.05;
+C.lakeWidth = 80; C.lakeDepth = 80; C.lakeHeight = 40;
+C.maxFishHeight = C.lakeHeight - 2; C.minFishHeight = 2;
+C.maxSubHeight = C.lakeHeight - 1; C.minSubHeight = 1;
+C.fishCollisionRadius = 2.0; // Collision radius for larger fish
+
+function randomRange(min, max) { return Math.random() * (max - min) + min; }
+function vecLength(v) { return Math.sqrt(v.x*v.x + v.y*v.y + v.z*v.z); }
+function vecNormalize(v) { const l = vecLength(v); return l === 0 ? { x: 0, y: 0, z: 0 } : { x: v.x / l, y: v.y / l, z: v.z / l }; }
+function vecSub(a, b) { return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z }; }
+function vecAdd(a, b) { return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z }; }
+function vecScale(v, s) { return { x: v.x * s, y: v.y * s, z: v.z * s }; }
+function vecDistance(a, b) { return vecLength(vecSub(a, b)); }
+
+// Shared Simulation Model
+class UnderwaterSim extends Croquet.Model {
+    init() {
+        this.rocks = this.createRocks(30);
+        this.seaweed = this.createSeaweed(60);
+        this.fish = new Map();
+        // *** CORRECTED LOOP ***
+        for (let i = 0; i < C.fishCount; i++) {
+            const fishInstance = SimFish.create(); // Create the fish first
+            this.fish.set(fishInstance.id, fishInstance); // THEN add it to the map using its ID
+        }
+        // *** END CORRECTION ***
+        this.subs = new Map();
+        this.paintballs = new Map();
+        this.scores = { gray: C.fishCount };
+        this.playerColors = {};
+        this.playerNames = {};
+        this.subscribe(this.sessionId, "view-join", this.onViewJoin);
+        this.subscribe(this.sessionId, "view-exit", this.onViewExit);
+        this.subscribe(this.sessionId, "shoot-paintball", this.onShootPaintball);
+        this.step(50);
+    }
+
+    onViewJoin(viewId) {
+        const sub = SimSubmarine.create({ viewId });
+        this.subs.set(viewId, sub);
+        this.scores[viewId] = 0;
+        this.playerColors[viewId] = sub.color;
+        this.playerNames[viewId] = `P-${viewId.substring(0, 4)}`;
+        console.log(`${this.now()}: Player ${this.playerNames[viewId]} (${viewId}) joined`);
+        this.publish("sim", "sub-added", sub);
+        this.publishScoreUpdate();
+    }
+
+    onViewExit(viewId) {
+        const sub = this.subs.get(viewId);
+        if (sub) {
+            const playerName = this.playerNames[viewId] || viewId;
+            console.log(`${this.now()}: Player ${playerName} (${viewId}) left`);
+            this.subs.delete(viewId);
+            delete this.scores[viewId]; delete this.playerColors[viewId]; delete this.playerNames[viewId];
+            this.recalculateScores();
+            this.publish("sim", "sub-removed", { viewId: viewId });
+            this.publishScoreUpdate();
+            sub.destroy();
+        }
+    }
+
+    onShootPaintball(paintballData) {
+        if (!this.subs.has(paintballData.viewId)) return;
+        const paintball = SimPaintball.create(paintballData);
+        this.paintballs.set(paintball.id, paintball);
+        this.publish("sim", "paintball-added", paintball);
+    }
+
+    step(ms) {
+        const dt = ms / 1000;
+        this.subs.forEach(sub => sub.move(dt));
+        this.fish.forEach(fish => fish.move(dt));
+
+        const expired = [];
+        for (const pb of this.paintballs.values()) {
+            pb.move(dt);
+            if (this.now() >= pb.spawnTime + C.paintballLifetime || pb.hit) {
+                expired.push(pb.id);
+            } else {
+                for (const fish of this.fish.values()) {
+                    if (!pb.hit && pb.pos && fish.pos && vecDistance(pb.pos, fish.pos) < C.fishCollisionRadius) {
+                        this.handleFishHit(pb, fish);
+                        pb.hit = true;
+                        if (!expired.includes(pb.id)) expired.push(pb.id);
+                        break;
+                    }
+                }
+            }
+        }
+        expired.forEach(id => {
+            const pb = this.paintballs.get(id);
+            if (pb) { this.paintballs.delete(id); this.publish("sim", "paintball-removed", { id }); pb.destroy(); }
+        });
+        this.future(50).step(50);
+    }
+
+    handleFishHit(paintball, fish) {
+        const oldOwner = fish.ownerViewId;
+        const newOwner = paintball.ownerViewId;
+        if (!newOwner || !paintball.color) { console.warn("Hit by invalid paintball", paintball); return; }
+        if (oldOwner !== newOwner) {
+            if (oldOwner && !this.scores.hasOwnProperty(oldOwner)) this.scores[oldOwner] = 0;
+            if (!this.scores.hasOwnProperty(newOwner)) this.scores[newOwner] = 0;
+            if (!this.scores.hasOwnProperty('gray')) this.scores.gray = 0;
+            if (oldOwner === null) { if (this.scores.gray > 0) this.scores.gray--; }
+            else if (this.scores[oldOwner] > 0) { this.scores[oldOwner]--; }
+            this.scores[newOwner]++;
+            fish.setColor(newOwner, paintball.color);
+            this.publish("sim", "fish-color-change", { fishId: fish.id, color: paintball.color, owner: newOwner });
+            this.publishScoreUpdate();
+        }
+    }
+
+    publishScoreUpdate() {
+        this.publish("sim", "score-update", { scores: { ...this.scores }, colors: { ...this.playerColors }, names: { ...this.playerNames } });
+    }
+
+    recalculateScores() {
+        const newScores = { gray: 0 };
+        Object.keys(this.playerColors).forEach(vId => newScores[vId] = 0);
+        for (const fish of this.fish.values()) {
+            if (fish.ownerViewId === null) {
+                newScores.gray++;
+            } else if (newScores.hasOwnProperty(fish.ownerViewId)) {
+                newScores[fish.ownerViewId]++;
+            } else {
+                 newScores.gray++;
+                 fish.setColor(null, "gray");
+                 this.publish("sim", "fish-color-change", { fishId: fish.id, color: "gray", owner: null });
+            }
+        }
+        this.scores = newScores;
+    }
+
+    createRocks(count) {
+        const rocks = [];
+        for (let i = 0; i < count; i++) {
+            const radius = randomRange(1, 5);
+            const position = { x: randomRange(-C.lakeWidth / 2 + radius, C.lakeWidth / 2 - radius), z: randomRange(-C.lakeDepth / 2 + radius, C.lakeDepth / 2 - radius), y: radius * 0.5 };
+            const shape = Math.random() < 0.6 ? 'sphere' : 'dodecahedron';
+            const segments = shape === 'sphere' ? Math.floor(randomRange(5, 9)) : undefined;
+            rocks.push({ radius, position, shape, segments });
+        }
+        return rocks;
+    }
+
+    createSeaweed(count) {
+        const seaweed = [];
+        for (let i = 0; i < count; i++) {
+            const height = randomRange(2, 6), radius = height * 0.05, segments = Math.floor(randomRange(3, 6));
+            const position = { x: randomRange(-C.lakeWidth / 2, C.lakeWidth / 2), z: randomRange(-C.lakeDepth / 2, C.lakeDepth / 2), y: 0 };
+            let tooClose = this.rocks.some(rock => vecDistance(position, rock.position) < rock.radius + 1);
+            if (!tooClose) seaweed.push({ height, radius, position, segments });
+        }
+        return seaweed;
+    }
+}
+UnderwaterSim.register("UnderwaterSim");
+
+// Submarine Model
+class SimSubmarine extends Croquet.Model {
+    init(options = {}) {
+        const { viewId } = options;
+        if (!viewId) { console.error("SimSubmarine requires a viewId"); this.destroy(); return; }
+        this.viewId = viewId;
+        this.color = `hsl(${Math.random()*360}, 80%, 60%)`;
+        this.pos = { x: randomRange(-5, 5), y: randomRange(C.minSubHeight + 1, C.maxSubHeight - 1), z: randomRange(-5, 5) };
+        this.angleY = randomRange(0, Math.PI * 2);
+        this.controls = { forward: false, backward: false, left: false, right: false, up: false, down: false }; // Use full names now
+        this.lastShotTime = 0;
+        this.subscribe(this.id, "control", this.onControl);
+    }
+
+    onControl({ control, value }) {
+        if (control === 'fire' && value) {
+            this.tryShoot();
+        } else if (this.controls.hasOwnProperty(control)) { // Check against full names
+            this.controls[control] = value;
+        }
+    }
+
+    tryShoot() {
+        const now = this.now();
+        if (now >= this.lastShotTime + C.shootCooldown) {
+            this.lastShotTime = now;
+            const direction = { x: Math.sin(this.angleY), y: 0, z: Math.cos(this.angleY) };
+            const normalizedDir = vecNormalize(direction);
+            const shootOffset = 1.8;
+            const shootPos = vecAdd(this.pos, vecScale(normalizedDir, shootOffset));
+            this.publish(this.sessionId, "shoot-paintball", {
+                viewId: this.viewId, position: shootPos, direction: normalizedDir, color: this.color
+            });
+        }
+    }
+
+    // Use full control names in getters
+    get speed() { return this.controls.forward ? 1 : this.controls.backward ? -0.5 : 0; }
+    get turn() { return this.controls.left ? 1 : this.controls.right ? -1 : 0; }
+    get verticalSpeed() { return this.controls.up ? 1 : this.controls.down ? -1 : 0; }
+
+    move(dt) {
+        const scale = dt * 60;
+        const turnAmount = C.subTurnSpeed * this.turn * scale;
+        this.angleY = (this.angleY + turnAmount) % (Math.PI * 2);
+        if (this.angleY < 0) this.angleY += Math.PI * 2;
+        const moveSpeed = C.subSpeed * this.speed * scale;
+        this.pos.x += moveSpeed * Math.sin(this.angleY);
+        this.pos.z += moveSpeed * Math.cos(this.angleY);
+        const vertSpeed = C.subVerticalSpeed * this.verticalSpeed * scale;
+        this.pos.y += vertSpeed;
+        // Clamp position
+        this.pos.x = Math.max(-C.lakeWidth/2+1, Math.min(C.lakeWidth/2-1, this.pos.x));
+        this.pos.z = Math.max(-C.lakeDepth/2+1, Math.min(C.lakeDepth/2-1, this.pos.z));
+        this.pos.y = Math.max(C.minSubHeight, Math.min(C.maxSubHeight, this.pos.y));
+    }
+}
+SimSubmarine.register("SimSubmarine");
+
+// Fish Model
+class SimFish extends Croquet.Model {
+    init(_ = {}) { // No args needed
+        this.pos = { x: randomRange(-C.lakeWidth / 2, C.lakeWidth / 2), y: randomRange(C.minFishHeight, C.maxFishHeight), z: randomRange(-C.lakeDepth / 2, C.lakeDepth / 2) };
+        this.targetPos = { ...this.pos };
+        this.angleY = randomRange(0, Math.PI * 2);
+        this.color = "gray";
+        this.ownerViewId = null;
+        this.chooseNewTarget();
+    }
+    chooseNewTarget() {
+        this.targetPos = { x: randomRange(-C.lakeWidth/2+2, C.lakeWidth/2-2), y: randomRange(C.minFishHeight, C.maxFishHeight), z: randomRange(-C.lakeDepth/2+2, C.lakeDepth/2-2) };
+        if (vecDistance(this.pos, this.targetPos) < 15) this.chooseNewTarget();
+    }
+    move(dt) {
+        const scale = dt * 60;
+        const distToTarget = vecDistance(this.pos, this.targetPos);
+        if (distToTarget < 3) this.chooseNewTarget();
+        const desiredDir = vecNormalize(vecSub(this.targetPos, this.pos));
+        const targetAngleY = Math.atan2(desiredDir.x, desiredDir.z);
+        let angleDiff = targetAngleY - this.angleY;
+        while (angleDiff > Math.PI) angleDiff -= Math.PI * 2; while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+        const turnSpeed = C.fishTurnSpeed;
+        const turnAmount = Math.sign(angleDiff) * Math.min(Math.abs(angleDiff), turnSpeed * scale);
+        this.angleY = (this.angleY + turnAmount);
+        if (this.angleY < 0) this.angleY += Math.PI * 2; if (this.angleY > Math.PI * 2) this.angleY -= Math.PI * 2;
+        const moveSpeed = C.fishSpeed * scale;
+        this.pos.x += moveSpeed * Math.sin(this.angleY); this.pos.z += moveSpeed * Math.cos(this.angleY);
+        this.pos.y += Math.sign(this.targetPos.y - this.pos.y) * moveSpeed * 0.3;
+        // Clamp position
+        this.pos.x = Math.max(-C.lakeWidth/2+.5, Math.min(C.lakeWidth/2-.5, this.pos.x));
+        this.pos.z = Math.max(-C.lakeDepth/2+.5, Math.min(C.lakeDepth/2-.5, this.pos.z));
+        this.pos.y = Math.max(C.minFishHeight, Math.min(C.maxFishHeight, this.pos.y));
+    }
+    setColor(ownerId, color) { this.ownerViewId = ownerId; this.color = color; }
+}
+SimFish.register("SimFish");
+
+// Paintball Model
+class SimPaintball extends Croquet.Model {
+    init(options = {}) {
+        const { viewId, color, position, direction } = options;
+        if (!viewId || !color || !position || !direction) {
+             console.error("SimPaintball created with incomplete options:", options);
+             this.ownerViewId = viewId || null; this.color = color || 'magenta';
+             this.pos = position ? { ...position } : { x: 0, y: C.lakeHeight / 2, z: 0 };
+             this.dir = direction ? { ...direction } : { x: 0, y: 0, z: 1 };
+             this.hit = true;
+        } else {
+            this.ownerViewId = viewId; this.color = color; this.pos = { ...position }; this.dir = { ...direction }; this.hit = false;
+        }
+        this.spawnTime = this.now();
+    }
+    move(dt) {
+        if (this.hit || !this.pos || !this.dir) return;
+        const scale = dt * 60, moveAmount = vecScale(this.dir, C.paintballSpeed * scale);
+        this.pos = vecAdd(this.pos, moveAmount);
+        if (this.pos.y < 0 || this.pos.y > C.lakeHeight+2 || Math.abs(this.pos.x) > C.lakeWidth/2+2 || Math.abs(this.pos.z) > C.lakeDepth/2+2) this.hit = true;
+    }
+}
+SimPaintball.register("SimPaintball");
+
+
+// View (Interface)
+class UnderwaterInterface extends Croquet.View {
+    constructor(sim) {
+        super(sim); this.sim = sim; this.scene = new THREE.Scene(); this.scene.background = new THREE.Color(0x006994); this.scene.fog = new THREE.Fog(0x006994, 25, 110); this.camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 200); this.camera.position.set(0, 5, -10); this.camera.lookAt(0, 3, 0); this.renderer = new THREE.WebGLRenderer({antialias: true}); this.renderer.setSize(innerWidth, innerHeight); this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = THREE.PCFSoftShadowMap; document.body.appendChild(this.renderer.domElement); const amb = new THREE.AmbientLight(0x4080a0, 0.9); this.scene.add(amb); const dir = new THREE.DirectionalLight(0xccffff, 1.0); dir.position.set(30, 50, 20); dir.castShadow = true; dir.shadow.mapSize.width = 1024; dir.shadow.mapSize.height = 1024; dir.shadow.camera.near = 10; dir.shadow.camera.far = 150; dir.shadow.camera.left = -C.lakeWidth/1.5; dir.shadow.camera.right = C.lakeWidth/1.5; dir.shadow.camera.top = C.lakeHeight*1.5; dir.shadow.camera.bottom = -C.lakeHeight/2; this.scene.add(dir); const gGeo = new THREE.PlaneGeometry(C.lakeWidth, C.lakeDepth, 20, 20); const gMat = new THREE.MeshStandardMaterial({color: 0x9c7c50, roughness: 0.8, metalness: 0.1}); const g = new THREE.Mesh(gGeo, gMat); g.rotation.x = -Math.PI/2; g.receiveShadow = true; this.scene.add(g); this.makeRocksFromSim(); this.makeSeaweedFromSim(); this.subObjects = new Map(); this.fishObjects = new Map(); this.paintballObjects = new Map(); this.sim.subs.forEach(s => this.onSubAdded(s)); this.sim.fish.forEach(f => this.onFishAdded(f)); this.mySimSub = sim.subs.get(this.viewId); this.subscribe("sim", "sub-added", this.onSubAdded); this.subscribe("sim", "sub-removed", this.onSubRemoved); this.subscribe("sim", "fish-color-change", this.onFishColorChange); this.subscribe("sim", "paintball-added", this.onPaintballAdded); this.subscribe("sim", "paintball-removed", this.onPaintballRemoved); this.subscribe("sim", "score-update", this.updateScoreboard); this.updateScoreboard({scores: this.sim.scores, colors: this.sim.playerColors, names: this.sim.playerNames}); window.addEventListener('resize', this.onWindowResize.bind(this), false);
+    }
+    detach() { window.removeEventListener('resize', this.onWindowResize.bind(this)); this.renderer.dispose(); if(this.renderer.domElement.parentNode) this.renderer.domElement.parentNode.removeChild(this.renderer.domElement); super.detach(); }
+    onWindowResize() { this.camera.aspect = innerWidth/innerHeight; this.camera.updateProjectionMatrix(); this.renderer.setSize(innerWidth, innerHeight); }
+    onSubAdded(simSub) { const sO = this.createSubmarine(simSub); this.subObjects.set(simSub.viewId, sO); this.scene.add(sO); if(simSub.viewId === this.viewId) this.mySimSub = this.sim.subs.get(this.viewId); }
+    onSubRemoved({viewId}) { const sO = this.subObjects.get(viewId); if(sO) { sO.traverse(c => { if(c.isMesh){ c.geometry?.dispose(); if(Array.isArray(c.material)) c.material.forEach(m=>m?.dispose()); else c.material?.dispose(); }}); this.scene.remove(sO); this.subObjects.delete(viewId); } }
+    onFishAdded(simFish) { const fO = this.createFish(simFish); this.fishObjects.set(simFish.id, fO); this.scene.add(fO); }
+    onFishColorChange({fishId, color, owner}) { const fG = this.fishObjects.get(fishId); if(fG){ const bM = fG.getObjectByName("fishBody"), tM = fG.getObjectByName("fishTail"), vC = color || 'gray'; if(bM?.material) bM.material.color.set(vC); if(tM?.material) tM.material.color.set(vC); fG.userData.owner = owner; }}
+    onPaintballAdded(simPb) { if(this.paintballObjects.has(simPb.id)) return; const pO = this.createPaintball(simPb); if(pO) { this.paintballObjects.set(simPb.id, pO); this.scene.add(pO); }}
+    onPaintballRemoved({id}) { const pO = this.paintballObjects.get(id); if(pO) { this.scene.remove(pO); pO.material?.dispose(); this.paintballObjects.delete(id); }} // Don't dispose shared geometry
+    update(_) { this.updateSubsVisuals(); this.updateFishVisuals(); this.updatePaintballsVisuals(); this.updateCamera(this.subObjects.get(this.viewId)); this.renderer.render(this.scene, this.camera); }
+    updateSubsVisuals() { for (const [vId, sO] of this.subObjects) { const sS = this.sim.subs.get(vId); if (sS?.pos) { sO.position.lerp(new THREE.Vector3(sS.pos.x, sS.pos.y, sS.pos.z), 0.15); if (!sO.userData.currentQ) sO.userData.currentQ = sO.quaternion.clone(); const tQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), sS.angleY || 0); sO.userData.currentQ.slerp(tQ, 0.15); sO.quaternion.copy(sO.userData.currentQ); } } }
+    updateFishVisuals() { for (const [id, fG] of this.fishObjects) { const sF = this.sim.fish.get(id); if (sF?.pos) { fG.position.lerp(new THREE.Vector3(sF.pos.x, sF.pos.y, sF.pos.z), 0.1); if (!fG.userData.currentQ) fG.userData.currentQ = fG.quaternion.clone(); const tQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), sF.angleY || 0); fG.userData.currentQ.slerp(tQ, 0.1); fG.quaternion.copy(fG.userData.currentQ); const t = fG.getObjectByName("fishTail"); if (t) t.rotation.y = Math.sin(Date.now()*0.01)*0.4; } } }
+    updatePaintballsVisuals() { const cPIds = Array.from(this.paintballObjects.keys()); cPIds.forEach(id => { const pO = this.paintballObjects.get(id); if(!pO) return; const sP = this.sim.paintballs.get(id); if(sP?.pos) pO.position.set(sP.pos.x, sP.pos.y, sP.pos.z); else this.onPaintballRemoved({id}); }); }
+    updateCamera(mSO) { if (!mSO?.userData.cameraTarget) { this.camera.position.lerp(new THREE.Vector3(0, 15, -25), 0.02); this.camera.lookAt(0, 0, 0); return; } const tP = new THREE.Vector3(); mSO.userData.cameraTarget.getWorldPosition(tP); this.camera.position.lerp(tP, 0.08); const lAP = new THREE.Vector3(); mSO.getWorldPosition(lAP); lAP.y += 0.5; this.camera.lookAt(lAP); }
+    makeRocksFromSim() { const rM = new THREE.MeshStandardMaterial({color:0x6a6a6a, roughness:0.7, metalness:0.1}); this.sim.rocks.forEach(({radius:r,position:p,shape:sh,segments:sg})=>{ let g; if(sh==='sphere') g=new THREE.SphereGeometry(r,sg,Math.max(4,sg-1)); else g=new THREE.DodecahedronGeometry(r); const m=new THREE.Mesh(g,rM); m.position.set(p.x,p.y,p.z); m.rotation.set(Math.random()*Math.PI,Math.random()*Math.PI,Math.random()*Math.PI); m.castShadow=true; m.receiveShadow=true; this.scene.add(m); }); }
+    makeSeaweedFromSim() { const swM = new THREE.MeshStandardMaterial({color:0x2a803d,roughness:0.9,side:THREE.DoubleSide}); this.sim.seaweed.forEach(({height:h,radius:r,position:p,segments:sg})=>{ const swG = new THREE.Group(); const sH = h/sg; let cP = new THREE.Vector3(p.x,p.y,p.z), cA = randomRange(-0.3,0.3); for(let i=0;i<sg;i++){ const sG = new THREE.CylinderGeometry(r*(1-i/sg*0.3),r*(1-(i+1)/sg*0.3),sH,5), sM = new THREE.Mesh(sG,swM); sM.position.set(cP.x+Math.sin(cA)*sH/2,cP.y+sH/2,cP.z+Math.cos(cA)*sH/2); sM.rotation.y=cA; sM.castShadow=true; swG.add(sM); cP.x+=Math.sin(cA)*sH; cP.y+=sH; cP.z+=Math.cos(cA)*sH; cA+=randomRange(-0.2,0.2); } this.scene.add(swG); }); }
+    createSubmarine(sS) { const sG=new THREE.Group(); sG.position.set(sS.pos.x,sS.pos.y,sS.pos.z); sG.quaternion.setFromAxisAngle(new THREE.Vector3(0,1,0),sS.angleY); const bG=new THREE.CapsuleGeometry(0.6,1.5,4,10),bM=new THREE.MeshStandardMaterial({color:sS.color,metalness:0.4,roughness:0.5}),bMe=new THREE.Mesh(bG,bM); bMe.rotation.x=Math.PI/2; bMe.castShadow=true; sG.add(bMe); const cG=new THREE.SphereGeometry(0.4,10,8),cM=new THREE.MeshStandardMaterial({color:0xaaddff,transparent:true,opacity:0.5}),cMe=new THREE.Mesh(cG,cM); cMe.position.set(0,0.4,0.3); sG.add(cMe); const cT=new THREE.Object3D(); cT.position.set(0,3,-8); sG.add(cT); sG.userData.cameraTarget=cT; sG.userData.viewId=sS.viewId; return sG; }
+    // *** createFish with LARGER FISH ***
+    createFish(simFish) {
+        const fishGroup = new THREE.Group();
+        fishGroup.position.set(simFish.pos.x, simFish.pos.y, simFish.pos.z);
+        fishGroup.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), simFish.angleY);
+        const baseRadius = 0.8; // Increased base size
+        const fishGeo = new THREE.SphereGeometry(baseRadius, 10, 8); // Slightly more detail
+        fishGeo.scale(1, 0.7, 1.4); // Adjusted scaling
+        const fishMat = new THREE.MeshStandardMaterial({ color: simFish.color, metalness: 0.1, roughness: 0.6 });
+        const fishMesh = new THREE.Mesh(fishGeo, fishMat);
+        fishMesh.name = "fishBody"; fishMesh.castShadow = true;
+        fishGroup.add(fishMesh);
+        const finScale = 1.5; // Scale fin proportionally
+        const finGeo = new THREE.PlaneGeometry(0.6 * finScale, 0.5 * finScale);
+        const finMat = fishMat; // Share material
+        const finMesh = new THREE.Mesh(finGeo, finMat);
+        finMesh.name = "fishTail";
+        finMesh.position.z = -baseRadius * 1.4 * 0.9; // Adjusted position relative to scaled body
+        finMesh.rotation.x = -Math.PI / 12;
+        fishGroup.add(finMesh);
+        fishGroup.userData.fishId = simFish.id;
+        return fishGroup;
+    }
+    createPaintball(simPb) { const pC=simPb.color||'magenta'; if(pC==='magenta')console.warn(`Pb ${simPb.id} bad color`); if(!this.paintballGeo)this.paintballGeo=new THREE.SphereGeometry(0.2,6,6); const pM=new THREE.MeshStandardMaterial({color:pC,emissive:pC,emissiveIntensity:0.6}),pMe=new THREE.Mesh(this.paintballGeo,pM); if(simPb.pos)pMe.position.set(simPb.pos.x,simPb.pos.y,simPb.pos.z); else {console.error(`Pb ${simPb.id} bad pos`); return null;} return pMe; }
+    updateScoreboard({scores, colors, names}) {
+        const sL = document.getElementById("score-list"); if(!sL) return; sL.innerHTML = ""; const sE = []; if(scores.hasOwnProperty('gray')) sE.push({id:'gray', count:scores.gray, color:'gray', name:'Gray'}); Object.keys(scores).forEach(id => { if(id !== 'gray' && colors[id]) sE.push({id, count:scores[id]||0, color:colors[id], name:names[id]||`P-${id.substring(0,4)}`}); }); sE.sort((a,b) => b.count - a.count); sE.forEach(({id, count, color, name}) => { const li=document.createElement("li"), cB=document.createElement("span"); cB.className="score-color-box"; cB.style.backgroundColor=color; li.appendChild(cB); li.appendChild(document.createTextNode(` ${name}: ${count}`)); sL.appendChild(li); });
+        // Position keybindings relative to scoreboard after update
+        const sDiv = document.getElementById('scoreboard'); const kDiv = document.getElementById('keybindings'); if (sDiv && kDiv) { kDiv.style.left = `${sDiv.offsetLeft + sDiv.offsetWidth + 8}px`; /* Adjusted spacing */ kDiv.style.top = `${sDiv.offsetTop}px`; } // Align top
+    }
+}
+
+
+// --- User Input Handling ---
+const myControls = { forward:false,backward:false,left:false,right:false,up:false,down:false, set(c,v){if(this[c]===v)return;this[c]=v;const{view}=ThisSession;if(view?.mySimSub)view.publish(view.mySimSub.id,"control",{control:c,value:v});}, fireOnce(){const{view}=ThisSession;if(view?.mySimSub)view.publish(view.mySimSub.id,"control",{control:"fire",value:true});}};
+function setupControls() { const btnF=document.getElementById("btn-fwd"),btnB=document.getElementById("btn-bwd"),btnL=document.getElementById("btn-left"),btnR=document.getElementById("btn-right"),btnU=document.getElementById("btn-up"),btnD=document.getElementById("btn-down"),btnFire=document.getElementById("btn-fire"); const tS=(c)=>(e)=>{e.preventDefault();myControls.set(c,true);}; const tE=(c)=>(e)=>{e.preventDefault();let sT=false;if(e.touches){const tB=e.target;for(let i=0;i<e.touches.length;i++){if(e.touches[i].target===tB){let iE=false;for(let j=0;j<e.changedTouches.length;j++)if(e.touches[i].identifier===e.changedTouches[j].identifier){iE=true;break;}if(!iE){sT=true;break;}}}}if(!sT)myControls.set(c,false);}; const fT=(e)=>{e.preventDefault();myControls.fireOnce();}; const mD=(c)=>(e)=>{e.preventDefault();myControls.set(c,true);}; const mU=(c)=>(e)=>{e.preventDefault();myControls.set(c,false);}; const fMD=(e)=>{e.preventDefault();myControls.fireOnce();}; const mB=[{el:btnF,control:"forward"},{el:btnB,control:"backward"},{el:btnL,control:"left"},{el:btnR,control:"right"},{el:btnU,control:"up"},{el:btnD,control:"down"},]; mB.forEach(({el,control})=>{el.addEventListener("touchstart",tS(control),{passive:false});el.addEventListener("touchend",tE(control),{passive:false});el.addEventListener("touchcancel",tE(control),{passive:false});el.addEventListener("mousedown",mD(control),{passive:false});el.addEventListener("mouseup",mU(control),{passive:false});el.addEventListener("mouseleave",mU(control),{passive:false});}); btnFire.addEventListener("touchstart",fT,{passive:false});btnFire.addEventListener("mousedown",fMD,{passive:false}); document.querySelector('.controls').addEventListener('contextmenu',(e)=>e.preventDefault()); const kM={w:"forward",arrowup:"forward",s:"backward",arrowdown:"backward",a:"left",arrowleft:"left",d:"right",arrowright:"right",e:"up",pageup:"up",r:"up",q:"down",pagedown:"down",f:"down"," ":"fire"};const kP={}; window.addEventListener("keydown",(e)=>{if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.isContentEditable)return;const c=kM[e.key.toLowerCase()];if(c&&!kP[e.key.toLowerCase()]){kP[e.key.toLowerCase()]=true;if(c==="fire")myControls.fireOnce();else myControls.set(c,true);e.preventDefault();}}); window.addEventListener("keyup",(e)=>{if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.isContentEditable)return;const c=kM[e.key.toLowerCase()];if(c){kP[e.key.toLowerCase()]=false;if(c!=="fire")myControls.set(c,false);e.preventDefault();}}); }
+
+// --- Croquet Session Start ---
+Croquet.App.makeWidgetDock(); window.ThisSession = null;
+async function joinSession() { try { const session = await Croquet.Session.join({ apiKey: "234567_Paste_Your_Own_API_Key_Here_7654321", appId: "io.croquet.threejs.multisub.v7", name: Croquet.App.autoSession(), password: Croquet.App.autoPassword(), model: UnderwaterSim, view: UnderwaterInterface, }); window.ThisSession = session; console.log(`Joined session: ${session.sessionId}`); if(window.ThisSession.view)setupControls(); else console.warn("View not ready for controls."); } catch (error) { console.error("Join failed:", error); const eMsg=document.createElement('div'); eMsg.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(255,0,0,0.8);color:white;padding:20px;border-radius:10px;z-index:100;'; eMsg.textContent=`Connection Error: ${error.message}. Check network/API key & refresh.`; document.body.appendChild(eMsg); } }
+joinSession();
+
+        </script>
+    </body>
+</html>
